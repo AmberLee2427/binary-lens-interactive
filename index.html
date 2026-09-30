@@ -1,0 +1,1036 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Interactive Binary-Lens Image Map</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #68737d;
+      --panel: #f7f8fa;
+      --line: #d9dee5;
+      --host: #111;
+      --planet: #777b82;
+      --source: #e98623;
+      --binary: #1d6fb8;
+      --caustic: #c73e4a;
+      --critical: #4d535a;
+      --host-fspl: #d34a3a;
+      --planet-fspl: #7d54b8;
+      --green: #4f9a5f;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: #eef1f4;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(320px, 1fr) 330px;
+      gap: 18px;
+      min-height: 100vh;
+      padding: 18px;
+    }
+
+    .stage {
+      display: grid;
+      grid-template-rows: minmax(420px, 1fr) 162px 162px;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .plot,
+    aside {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 18px 45px rgba(31, 42, 55, 0.08);
+    }
+
+    .plot {
+      position: relative;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+    }
+
+    #lensCanvas.dragging {
+      cursor: grabbing;
+    }
+
+    .caption {
+      position: absolute;
+      left: 14px;
+      top: 12px;
+      padding: 7px 9px;
+      border: 1px solid rgba(217, 222, 229, 0.9);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.92);
+      font-size: 13px;
+      line-height: 1.35;
+      pointer-events: none;
+    }
+
+    aside {
+      padding: 16px;
+      overflow: auto;
+    }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: 20px;
+      line-height: 1.15;
+      font-weight: 750;
+      letter-spacing: 0;
+    }
+
+    .lede {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .control {
+      display: grid;
+      grid-template-columns: 74px 1fr 74px;
+      align-items: center;
+      gap: 10px;
+      margin: 12px 0;
+      font-size: 13px;
+    }
+
+    .control label {
+      color: #354250;
+      font-weight: 650;
+    }
+
+    .control output {
+      text-align: right;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: #2d6f8f;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 8px;
+      margin: 16px 0;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--ink);
+      padding: 8px 10px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #eaf0f3;
+    }
+
+    .readout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 14px 0;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 9px;
+      background: var(--panel);
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 3px;
+      font-size: 16px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .legend {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 12px;
+      margin-top: 16px;
+      font-size: 12px;
+      color: #3f4a56;
+    }
+
+    .key {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .swatch {
+      width: 22px;
+      height: 0;
+      border-top: 3px solid currentColor;
+      flex: 0 0 auto;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: currentColor;
+      flex: 0 0 auto;
+    }
+
+    .note {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 900px) {
+      main {
+        grid-template-columns: 1fr;
+        padding: 12px;
+      }
+
+      .stage {
+        grid-template-rows: 68vh 150px 150px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="stage" aria-label="Interactive binary lens plots">
+      <div class="plot">
+        <canvas id="lensCanvas"></canvas>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="plot"><canvas id="magCanvas"></canvas></div>
+      <div class="plot"><canvas id="astrometryCanvas"></canvas></div>
+    </section>
+
+    <aside>
+      <h1>Binary-Lens Image Map</h1>
+      <p class="lede">Drag the source in the main panel. The binary images, component point-lens overlays, caustics, critical curves, light curve, and astrometric shift update together.</p>
+
+      <div class="control">
+        <label for="s">s</label>
+        <input id="s" type="range" min="0.3" max="3" step="0.01" value="1.2">
+        <output id="sOut"></output>
+      </div>
+      <div class="control">
+        <label for="qLog">log q</label>
+        <input id="qLog" type="range" min="-5" max="-0.3" step="0.02" value="-3">
+        <output id="qOut"></output>
+      </div>
+      <div class="control">
+        <label for="rhoLog">log rho</label>
+        <input id="rhoLog" type="range" min="-5" max="-1" step="0.02" value="-3">
+        <output id="rhoOut"></output>
+      </div>
+      <div class="control">
+        <label for="zoom">zoom</label>
+        <input id="zoom" type="range" min="0.35" max="5" step="0.01" value="1.8">
+        <output id="zoomOut"></output>
+      </div>
+
+      <div class="buttons">
+        <button id="resetBtn">Reset Source</button>
+        <button id="sampleBtn">Trace Line</button>
+      </div>
+
+      <div class="readout">
+        <div class="metric"><span>source y1</span><strong id="y1Read"></strong></div>
+        <div class="metric"><span>source y2</span><strong id="y2Read"></strong></div>
+        <div class="metric"><span>point images</span><strong id="nRead"></strong></div>
+        <div class="metric"><span>magnification</span><strong id="aRead"></strong></div>
+      </div>
+
+      <div class="legend">
+        <div class="key" style="color: var(--caustic)"><span class="swatch"></span>Binary caustics</div>
+        <div class="key" style="color: var(--critical)"><span class="swatch"></span>Critical curves</div>
+        <div class="key" style="color: var(--binary)"><span class="swatch"></span>Binary images</div>
+        <div class="key" style="color: var(--source)"><span class="dot"></span>Source</div>
+        <div class="key" style="color: var(--host-fspl)"><span class="swatch"></span>Host-only FSPL</div>
+        <div class="key" style="color: var(--planet-fspl)"><span class="swatch"></span>Planet-only FSPL</div>
+        <div class="key" style="color: var(--green)"><span class="swatch"></span>Einstein rings</div>
+        <div class="key" style="color: var(--host)"><span class="dot"></span>Lenses</div>
+      </div>
+
+      <p class="note">The browser solver uses Newton refinement from many seeds and clusters duplicate roots. It is meant for intuition and pattern-finding; keep VBMicrolensing as the authority for publication-quality finite-source contours.</p>
+    </aside>
+  </main>
+
+  <script>
+    const TAU = Math.PI * 2;
+    const els = {
+      lens: document.getElementById("lensCanvas"),
+      mag: document.getElementById("magCanvas"),
+      astrometry: document.getElementById("astrometryCanvas"),
+      caption: document.getElementById("caption"),
+      s: document.getElementById("s"),
+      qLog: document.getElementById("qLog"),
+      rhoLog: document.getElementById("rhoLog"),
+      zoom: document.getElementById("zoom"),
+      sOut: document.getElementById("sOut"),
+      qOut: document.getElementById("qOut"),
+      rhoOut: document.getElementById("rhoOut"),
+      zoomOut: document.getElementById("zoomOut"),
+      y1Read: document.getElementById("y1Read"),
+      y2Read: document.getElementById("y2Read"),
+      nRead: document.getElementById("nRead"),
+      aRead: document.getElementById("aRead"),
+      resetBtn: document.getElementById("resetBtn"),
+      sampleBtn: document.getElementById("sampleBtn"),
+    };
+
+    const state = {
+      y: { x: 0.1, y: 0.1 },
+      lineMode: true,
+      dragging: false,
+      cache: null,
+    };
+
+    function add(a, b) { return { x: a.x + b.x, y: a.y + b.y }; }
+    function sub(a, b) { return { x: a.x - b.x, y: a.y - b.y }; }
+    function mul(a, s) { return { x: a.x * s, y: a.y * s }; }
+    function cmul(a, b) { return { x: a.x * b.x - a.y * b.y, y: a.x * b.y + a.y * b.x }; }
+    function cdiv(a, b) {
+      const d = b.x * b.x + b.y * b.y;
+      return { x: (a.x * b.x + a.y * b.y) / d, y: (a.y * b.x - a.x * b.y) / d };
+    }
+    function csqrtPolar(r, a) { return { x: r * Math.cos(a), y: r * Math.sin(a) }; }
+    function conj(a) { return { x: a.x, y: -a.y }; }
+    function abs2(a) { return a.x * a.x + a.y * a.y; }
+    function abs(a) { return Math.hypot(a.x, a.y); }
+    function finite(a) { return Number.isFinite(a.x) && Number.isFinite(a.y); }
+
+    function params() {
+      const s = Number(els.s.value);
+      const q = Math.pow(10, Number(els.qLog.value));
+      const rho = Math.pow(10, Number(els.rhoLog.value));
+      const zoom = Number(els.zoom.value);
+      const mHost = 1 / (1 + q);
+      const mPlanet = q / (1 + q);
+      return {
+        s, q, rho, zoom, mHost, mPlanet,
+        host: { x: -q * s / (1 + q), y: 0 },
+        planet: { x: s / (1 + q), y: 0 },
+      };
+    }
+
+    function lensMap(z, p) {
+      const zbar = conj(z);
+      let out = { x: z.x, y: z.y };
+      for (const l of [{ pos: p.host, m: p.mHost }, { pos: p.planet, m: p.mPlanet }]) {
+        const den = sub(zbar, l.pos);
+        out = sub(out, mul(cdiv({ x: 1, y: 0 }, den), l.m));
+      }
+      return out;
+    }
+
+    function lensDerivatives(z, p) {
+      const zbar = conj(z);
+      let g = { x: 0, y: 0 };
+      for (const l of [{ pos: p.host, m: p.mHost }, { pos: p.planet, m: p.mPlanet }]) {
+        const den = sub(zbar, l.pos);
+        const inv2 = cdiv({ x: 1, y: 0 }, cmul(den, den));
+        g = add(g, mul(inv2, l.m));
+      }
+      return g;
+    }
+
+    function jacobianMagnification(z, p) {
+      const g = lensDerivatives(z, p);
+      const det = 1 - abs2(g);
+      return Number.isFinite(det) && Math.abs(det) > 1e-10 ? 1 / Math.abs(det) : 0;
+    }
+
+    function newtonRoot(seed, source, p) {
+      let z = { ...seed };
+      for (let i = 0; i < 48; i++) {
+        const f = sub(lensMap(z, p), source);
+        if (!finite(f) || abs(f) > 1e8) return null;
+        if (abs(f) < 1e-10) break;
+        const g = lensDerivatives(z, p);
+        const a = g.x;
+        const b = g.y;
+        const det = 1 - a * a - b * b;
+        if (Math.abs(det) < 1e-12) return null;
+        const dx = ((1 - a) * f.x - b * f.y) / det;
+        const dy = (-b * f.x + (1 + a) * f.y) / det;
+        z = { x: z.x - dx, y: z.y - dy };
+      }
+      const residual = abs(sub(lensMap(z, p), source));
+      return residual < 1e-7 && finite(z) ? z : null;
+    }
+
+    function seedPoints(source, p, extraSeeds = []) {
+      const seeds = [...extraSeeds];
+      const centers = [source, p.host, p.planet, { x: 0, y: 0 }];
+      for (const c of centers) {
+        seeds.push({ ...c });
+        for (const r of [0.04, 0.12, 0.28, 0.6, 1.0, 1.6, 2.5]) {
+          for (let k = 0; k < 18; k++) {
+            const a = TAU * k / 18;
+            seeds.push({ x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) });
+          }
+        }
+      }
+      return seeds;
+    }
+
+    function solveImages(source, p, extraSeeds = []) {
+      const roots = [];
+      for (const seed of seedPoints(source, p, extraSeeds)) {
+        const root = newtonRoot(seed, source, p);
+        if (!root) continue;
+        if (abs(root) > 20) continue;
+        const duplicate = roots.some(r => abs(sub(r, root)) < 3e-5);
+        if (!duplicate) roots.push(root);
+      }
+      return roots.sort((a, b) => Math.atan2(a.y, a.x) - Math.atan2(b.y, b.x));
+    }
+
+    function lastValid(track) {
+      for (let i = track.length - 1; i >= 0; i--) {
+        if (track[i]) return track[i];
+      }
+      return null;
+    }
+
+    function binaryImageContours(source, p) {
+      const n = p.rho < 0.002 ? 56 : 96;
+      const tracks = [];
+      let previousRoots = [];
+      const linkLimit = Math.max(0.18, Math.min(0.8, 4.5 * Math.sqrt(p.rho)));
+      for (let i = 0; i <= n; i++) {
+        const a = TAU * i / n;
+        const boundary = { x: source.x + p.rho * Math.cos(a), y: source.y + p.rho * Math.sin(a) };
+        const roots = solveImages(boundary, p, previousRoots);
+        const used = new Set();
+        if (i === 0) {
+          for (const r of roots) tracks.push([r]);
+        } else {
+          for (const track of tracks) {
+            const last = lastValid(track);
+            if (!last) {
+              track.push(null);
+              continue;
+            }
+            let best = -1;
+            let bestD = Infinity;
+            roots.forEach((r, idx) => {
+              if (used.has(idx)) return;
+              const d = abs(sub(r, last));
+              if (d < bestD) {
+                bestD = d;
+                best = idx;
+              }
+            });
+            if (best >= 0 && bestD < linkLimit) {
+              track.push(roots[best]);
+              used.add(best);
+            } else {
+              track.push(null);
+            }
+          }
+          roots.forEach((r, idx) => {
+            if (!used.has(idx)) {
+              const t = Array(i).fill(null);
+              t.push(r);
+              tracks.push(t);
+            }
+          });
+        }
+        previousRoots = roots;
+      }
+      return tracks.filter(t => t.reduce((count, pt) => count + (pt ? 1 : 0), 0) > 2);
+    }
+
+    function fsplContours(lens, mass, source, rho) {
+      const re = Math.sqrt(mass);
+      const dy = mul(sub(source, lens), 1 / re);
+      const rr = rho / re;
+      const major = [];
+      const minor = [];
+      for (let i = 0; i <= 160; i++) {
+        const a = TAU * i / 160;
+        const y = { x: dy.x + rr * Math.cos(a), y: dy.y + rr * Math.sin(a) };
+        const u = Math.max(abs(y), 1e-8);
+        const scaleP = 0.5 * (u + Math.sqrt(u * u + 4)) / u;
+        const scaleM = 0.5 * (u - Math.sqrt(u * u + 4)) / u;
+        major.push(add(lens, mul(y, scaleP * re)));
+        minor.push(add(lens, mul(y, scaleM * re)));
+      }
+      return { major, minor };
+    }
+
+    function polyEval(coeffs, z) {
+      let out = { x: 0, y: 0 };
+      for (let i = coeffs.length - 1; i >= 0; i--) {
+        out = add(cmul(out, z), coeffs[i]);
+      }
+      return out;
+    }
+
+    function quarticRoots(coeffs) {
+      const leading = coeffs[4];
+      const leadAbs = Math.max(abs(leading), 1e-14);
+      let maxRatio = 0;
+      for (let i = 0; i < 4; i++) maxRatio = Math.max(maxRatio, abs(coeffs[i]) / leadAbs);
+      const radius = 0.8 + Math.pow(maxRatio, 0.25);
+      let roots = [0, 1, 2, 3].map(i => csqrtPolar(radius, TAU * (i + 0.125) / 4));
+
+      for (let iter = 0; iter < 80; iter++) {
+        let maxStep = 0;
+        const next = roots.map((r, i) => {
+          let denom = { x: 1, y: 0 };
+          for (let j = 0; j < roots.length; j++) {
+            if (i !== j) denom = cmul(denom, sub(r, roots[j]));
+          }
+          denom = cmul(denom, leading);
+          if (abs(denom) < 1e-14) denom = { x: 1e-14, y: 0 };
+          const step = cdiv(polyEval(coeffs, r), denom);
+          maxStep = Math.max(maxStep, abs(step));
+          return sub(r, step);
+        });
+        roots = next;
+        if (maxStep < 1e-11) break;
+      }
+
+      return roots.filter(finite);
+    }
+
+    function criticalRootsForAngle(phi, p) {
+      const a = p.host.x;
+      const b = p.planet.x;
+      const e = { x: Math.cos(phi), y: Math.sin(phi) };
+
+      const c4 = e;
+      const c3 = mul(e, -2 * (a + b));
+      const c2 = add(mul(e, a * a + 4 * a * b + b * b), { x: -1, y: 0 });
+      const c1 = add(mul(e, -2 * a * b * (a + b)), { x: 2 * (p.mHost * b + p.mPlanet * a), y: 0 });
+      const c0 = add(mul(e, a * a * b * b), { x: -(p.mHost * b * b + p.mPlanet * a * a), y: 0 });
+
+      return quarticRoots([c0, c1, c2, c3, c4]).map(conj);
+    }
+
+    function bestRootOrder(previous, roots) {
+      const perms = [
+        [0, 1, 2, 3], [0, 1, 3, 2], [0, 2, 1, 3], [0, 2, 3, 1], [0, 3, 1, 2], [0, 3, 2, 1],
+        [1, 0, 2, 3], [1, 0, 3, 2], [1, 2, 0, 3], [1, 2, 3, 0], [1, 3, 0, 2], [1, 3, 2, 0],
+        [2, 0, 1, 3], [2, 0, 3, 1], [2, 1, 0, 3], [2, 1, 3, 0], [2, 3, 0, 1], [2, 3, 1, 0],
+        [3, 0, 1, 2], [3, 0, 2, 1], [3, 1, 0, 2], [3, 1, 2, 0], [3, 2, 0, 1], [3, 2, 1, 0],
+      ];
+      let best = roots;
+      let bestCost = Infinity;
+      for (const perm of perms) {
+        let cost = 0;
+        for (let i = 0; i < 4; i++) cost += abs(sub(previous[i], roots[perm[i]]));
+        if (cost < bestCost) {
+          bestCost = cost;
+          best = perm.map(i => roots[i]);
+        }
+      }
+      return best;
+    }
+
+    function criticalCurves(p) {
+      const curves = [[], [], [], []];
+      const n = 720;
+      let previous = null;
+      for (let i = 0; i <= n; i++) {
+        const roots = criticalRootsForAngle(TAU * i / n, p);
+        if (roots.length !== 4) continue;
+        const ordered = previous ? bestRootOrder(previous, roots) : roots.sort((u, v) => Math.atan2(u.y, u.x) - Math.atan2(v.y, v.x));
+        for (let j = 0; j < 4; j++) curves[j].push(ordered[j]);
+        previous = ordered;
+      }
+      return curves.filter(c => c.length > n * 0.8);
+    }
+
+    function causticsFromCritical(curves, p) {
+      return curves.map(c => c.map(z => lensMap(z, p)));
+    }
+
+    function resizeCanvas(canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.max(1, Math.round(rect.width * dpr));
+      const h = Math.max(1, Math.round(rect.height * dpr));
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+      return { w, h, dpr };
+    }
+
+    function plotter(canvas, zoom) {
+      const { w, h } = resizeCanvas(canvas);
+      const pad = 34;
+      const scale = Math.min((w - pad * 2) / (2 * zoom), (h - pad * 2) / (2 * zoom));
+      const cx = w / 2;
+      const cy = h / 2;
+      return {
+        ctx: canvas.getContext("2d"),
+        w, h, pad, scale,
+        toPx(pt) { return { x: cx + pt.x * scale, y: cy - pt.y * scale }; },
+        fromPx(pt) { return { x: (pt.x - cx) / scale, y: (cy - pt.y) / scale }; },
+      };
+    }
+
+    function path(ctx, pts, map, close = false) {
+      let open = false;
+      for (const pt of pts) {
+        if (!pt) {
+          open = false;
+          continue;
+        }
+        const p = map(pt);
+        if (!open) {
+          ctx.moveTo(p.x, p.y);
+          open = true;
+        } else {
+          ctx.lineTo(p.x, p.y);
+        }
+      }
+      if (close) ctx.closePath();
+    }
+
+    function drawGrid(pl, p) {
+      const ctx = pl.ctx;
+      ctx.clearRect(0, 0, pl.w, pl.h);
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, pl.w, pl.h);
+      ctx.strokeStyle = "#eef1f4";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      const step = p.zoom <= 1 ? 0.25 : p.zoom <= 2 ? 0.5 : 1;
+      for (let x = Math.ceil(-p.zoom / step) * step; x <= p.zoom; x += step) {
+        const a = pl.toPx({ x, y: -p.zoom });
+        const b = pl.toPx({ x, y: p.zoom });
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+      }
+      for (let y = Math.ceil(-p.zoom / step) * step; y <= p.zoom; y += step) {
+        const a = pl.toPx({ x: -p.zoom, y });
+        const b = pl.toPx({ x: p.zoom, y });
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+      }
+      ctx.stroke();
+      ctx.strokeStyle = "#b8c0c9";
+      ctx.beginPath();
+      path(ctx, [{ x: -p.zoom, y: 0 }, { x: p.zoom, y: 0 }], pl.toPx);
+      path(ctx, [{ x: 0, y: -p.zoom }, { x: 0, y: p.zoom }], pl.toPx);
+      ctx.stroke();
+    }
+
+    function circle(ctx, pl, pt, r, fill, stroke = null, width = 1) {
+      const p = pl.toPx(pt);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, TAU);
+      if (fill) {
+        ctx.fillStyle = fill;
+        ctx.fill();
+      }
+      if (stroke) {
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = width;
+        ctx.stroke();
+      }
+    }
+
+    function xMarker(ctx, pl, pt, size, color) {
+      if (!pt || !finite(pt)) return;
+      const p = pl.toPx(pt);
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.2;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(p.x - size, p.y - size);
+      ctx.lineTo(p.x + size, p.y + size);
+      ctx.moveTo(p.x + size, p.y - size);
+      ctx.lineTo(p.x - size, p.y + size);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function weightedCentroid(points, weights) {
+      let total = 0;
+      let out = { x: 0, y: 0 };
+      for (let i = 0; i < points.length; i++) {
+        const w = weights[i];
+        if (!Number.isFinite(w) || w <= 0) continue;
+        total += w;
+        out = add(out, mul(points[i], w));
+      }
+      return total > 0 ? mul(out, 1 / total) : null;
+    }
+
+    function centroidMarkerSize(mag) {
+      if (!Number.isFinite(mag) || mag <= 0) return 6;
+      return Math.max(6, Math.min(18, 5 + 3.4 * Math.log10(1 + mag)));
+    }
+
+    function binaryCentroidInfo(roots, p) {
+      const weights = roots.map(r => jacobianMagnification(r, p));
+      return {
+        centroid: weightedCentroid(roots, weights),
+        mag: weights.reduce((sum, w) => sum + (Number.isFinite(w) ? w : 0), 0),
+      };
+    }
+
+    function singleLensCentroidInfo(lens, mass, source) {
+      const re = Math.sqrt(mass);
+      const rel = mul(sub(source, lens), 1 / re);
+      const u = abs(rel);
+      if (u < 1e-8) return { centroid: lens, mag: Infinity };
+      const uhat = mul(rel, 1 / u);
+      const root = Math.sqrt(u * u + 4);
+      const plus = add(lens, mul(uhat, 0.5 * (u + root) * re));
+      const minus = add(lens, mul(uhat, 0.5 * (u - root) * re));
+      const common = (u * u + 2) / (u * root);
+      const aPlus = 0.5 * (common + 1);
+      const aMinus = 0.5 * (common - 1);
+      return {
+        centroid: weightedCentroid([plus, minus], [aPlus, aMinus]),
+        mag: aPlus + aMinus,
+      };
+    }
+
+    function lineAcrossView(a, b, zoom) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const hits = [];
+      if (Math.abs(dx) > 1e-10) {
+        for (const x of [-zoom, zoom]) {
+          const t = (x - a.x) / dx;
+          const y = a.y + t * dy;
+          if (y >= -zoom - 1e-8 && y <= zoom + 1e-8) hits.push({ x, y });
+        }
+      }
+      if (Math.abs(dy) > 1e-10) {
+        for (const y of [-zoom, zoom]) {
+          const t = (y - a.y) / dy;
+          const x = a.x + t * dx;
+          if (x >= -zoom - 1e-8 && x <= zoom + 1e-8) hits.push({ x, y });
+        }
+      }
+      if (hits.length < 2) return null;
+      hits.sort((u, v) => abs(sub(u, a)) - abs(sub(v, a)));
+      return [hits[0], hits[hits.length - 1]];
+    }
+
+    function drawLensPanel() {
+      const p = params();
+      const pl = plotter(els.lens, p.zoom);
+      const ctx = pl.ctx;
+      drawGrid(pl, p);
+
+      if (!state.cache || state.cache.s !== p.s || state.cache.q !== p.q) {
+        const critical = criticalCurves(p);
+        state.cache = { s: p.s, q: p.q, critical, caustic: causticsFromCritical(critical, p) };
+      }
+
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      for (const c of state.cache.caustic) {
+        ctx.beginPath();
+        path(ctx, c, pl.toPx);
+        ctx.strokeStyle = "rgba(199, 62, 74, 0.48)";
+        ctx.lineWidth = 1.35;
+        ctx.stroke();
+      }
+
+      for (const c of state.cache.critical) {
+        ctx.beginPath();
+        path(ctx, c, pl.toPx);
+        ctx.strokeStyle = "rgba(77, 83, 90, 0.34)";
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
+
+      for (const lens of [{ pos: p.host, r: Math.sqrt(p.mHost) }, { pos: p.planet, r: Math.sqrt(p.mPlanet) }]) {
+        for (let frac = 0.2; frac <= 1.4001; frac += 0.2) {
+          ctx.beginPath();
+          for (let i = 0; i <= 160; i++) {
+            const a = TAU * i / 160;
+            const radius = lens.r * frac;
+            const pt = { x: lens.pos.x + radius * Math.cos(a), y: lens.pos.y + radius * Math.sin(a) };
+            const px = pl.toPx(pt);
+            if (i === 0) ctx.moveTo(px.x, px.y); else ctx.lineTo(px.x, px.y);
+          }
+          ctx.strokeStyle = Math.abs(frac - 1.0) < 0.001 ? "rgba(30, 116, 50, 0.62)" : "rgba(79, 154, 95, 0.38)";
+          ctx.setLineDash(frac > 0.999 ? [2, 5] : [3, 5]);
+          ctx.lineWidth = Math.abs(frac - 1.0) < 0.001 ? 1.6 : 1.15;
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+
+      const hostFspl = fsplContours(p.host, p.mHost, state.y, p.rho);
+      const planetFspl = fsplContours(p.planet, p.mPlanet, state.y, p.rho);
+      for (const [contours, color] of [[hostFspl, "rgba(211, 74, 58, 0.68)"], [planetFspl, "rgba(125, 84, 184, 0.68)"]]) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        path(ctx, contours.major, pl.toPx);
+        ctx.stroke();
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        path(ctx, contours.minor, pl.toPx);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      const contours = binaryImageContours(state.y, p);
+      ctx.strokeStyle = "rgba(29, 111, 184, 0.92)";
+      ctx.lineWidth = 2.4;
+      for (const c of contours) {
+        ctx.beginPath();
+        path(ctx, c, pl.toPx);
+        ctx.stroke();
+      }
+
+      const roots = solveImages(state.y, p);
+      ctx.strokeStyle = "rgba(34, 88, 126, 0.28)";
+      ctx.lineWidth = 1.05;
+      ctx.setLineDash([9, 6]);
+      for (const r of roots.slice(0, 5)) {
+        const guide = lineAcrossView(state.y, r, p.zoom);
+        if (!guide) continue;
+        ctx.beginPath();
+        path(ctx, guide, pl.toPx);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      if (state.lineMode) {
+        ctx.strokeStyle = "rgba(233, 134, 35, 0.42)";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        path(ctx, [{ x: -p.zoom, y: state.y.y }, { x: p.zoom, y: state.y.y }], pl.toPx);
+        ctx.stroke();
+      }
+
+      circle(ctx, pl, p.host, 6.5, "#111");
+      circle(ctx, pl, p.planet, 4.8, "#777b82");
+      circle(ctx, pl, state.y, Math.max(5, p.rho * pl.scale), "rgba(233, 134, 35, 0.82)", "#111", 1.2);
+
+      for (const r of roots) circle(ctx, pl, r, 3.2, "rgba(29, 111, 184, 0.92)");
+
+      const hostCentroid = singleLensCentroidInfo(p.host, p.mHost, state.y);
+      const planetCentroid = singleLensCentroidInfo(p.planet, p.mPlanet, state.y);
+      const binaryCentroid = binaryCentroidInfo(roots, p);
+      xMarker(ctx, pl, hostCentroid.centroid, centroidMarkerSize(hostCentroid.mag), "rgba(211, 74, 58, 0.95)");
+      xMarker(ctx, pl, planetCentroid.centroid, centroidMarkerSize(planetCentroid.mag), "rgba(125, 84, 184, 0.95)");
+      xMarker(ctx, pl, binaryCentroid.centroid, centroidMarkerSize(binaryCentroid.mag), "rgba(29, 111, 184, 0.95)");
+
+      const mag = binaryCentroid.mag;
+      els.caption.innerHTML = `Binary vs component FSPL<br>s=${p.s.toFixed(2)}, q=${p.q.toExponential(1)}, rho=${p.rho.toExponential(1)}`;
+      els.y1Read.textContent = state.y.x.toFixed(3);
+      els.y2Read.textContent = state.y.y.toFixed(3);
+      els.nRead.textContent = String(roots.length);
+      els.aRead.textContent = mag > 1e4 ? ">1e4" : mag.toFixed(3);
+      return { p, roots, mag };
+    }
+
+    function singleMagnificationAt(source, p) {
+      return solveImages(source, p).reduce((sum, r) => sum + jacobianMagnification(r, p), 0);
+    }
+
+    function astrometricShiftAt(source, p) {
+      const roots = solveImages(source, p);
+      const centroid = binaryCentroidInfo(roots, p).centroid;
+      return centroid ? abs(sub(centroid, source)) : NaN;
+    }
+
+    function drawTimeSeries(canvas, title, quantity = "magnification") {
+      const p = params();
+      const { ctx, w, h } = plotter(canvas, 1);
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, w, h);
+
+      const xs = [];
+      const vals = [];
+      const n = 96;
+      for (let i = 0; i < n; i++) {
+        const t = -1.5 + 3 * i / (n - 1);
+        const y = { x: t, y: state.y.y };
+        xs.push(t);
+        vals.push(quantity === "astrometry" ? astrometricShiftAt(y, p) : singleMagnificationAt(y, p));
+      }
+      const finiteVals = vals.filter(Number.isFinite);
+      const minY = quantity === "astrometry" ? 0 : Math.min(...finiteVals);
+      const maxY = Math.max(...finiteVals);
+      const pad = { l: 50, r: 18, t: 26, b: 28 };
+      const xMap = x => pad.l + (x + 1.5) / 3 * (w - pad.l - pad.r);
+      const yMap = y => h - pad.b - (y - minY) / Math.max(1e-9, maxY - minY) * (h - pad.t - pad.b);
+
+      ctx.strokeStyle = "#e8edf2";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(pad.l, pad.t, w - pad.l - pad.r, h - pad.t - pad.b);
+      ctx.fillStyle = "#17202a";
+      ctx.font = "600 13px system-ui, sans-serif";
+      ctx.fillText(title, 14, 18);
+
+      ctx.beginPath();
+      let penDown = false;
+      for (let i = 0; i < n; i++) {
+        if (!Number.isFinite(vals[i])) {
+          penDown = false;
+          continue;
+        }
+        const x = xMap(xs[i]);
+        const y = yMap(vals[i]);
+        if (!penDown) {
+          ctx.moveTo(x, y);
+          penDown = true;
+        } else {
+          ctx.lineTo(x, y);
+        }
+      }
+      ctx.strokeStyle = quantity === "astrometry" ? "#1d6fb8" : "#111";
+      ctx.lineWidth = 1.7;
+      ctx.stroke();
+
+      const tNow = Math.max(-1.5, Math.min(1.5, state.y.x));
+      ctx.beginPath();
+      ctx.moveTo(xMap(tNow), pad.t);
+      ctx.lineTo(xMap(tNow), h - pad.b);
+      ctx.strokeStyle = "rgba(233, 134, 35, 0.78)";
+      ctx.setLineDash([5, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = "#68737d";
+      ctx.font = "12px system-ui, sans-serif";
+      ctx.fillText(quantity === "astrometry" ? "|centroid - source| / thetaE" : "Magnification A", 14, h - 10);
+      ctx.textAlign = "right";
+      ctx.fillText("t / tE", w - 14, h - 10);
+      ctx.textAlign = "left";
+    }
+
+    let raf = 0;
+    function render() {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const p = params();
+        els.sOut.textContent = p.s.toFixed(2);
+        els.qOut.textContent = p.q.toExponential(1);
+        els.rhoOut.textContent = p.rho.toExponential(1);
+        els.zoomOut.textContent = p.zoom.toFixed(2);
+        drawLensPanel();
+        drawTimeSeries(els.mag, "Binary Light Curve");
+        drawTimeSeries(els.astrometry, "Astrometric Centroid Shift", "astrometry");
+      });
+    }
+
+    function pointerWorld(ev) {
+      const rect = els.lens.getBoundingClientRect();
+      const pl = plotter(els.lens, params().zoom);
+      const dpr = window.devicePixelRatio || 1;
+      return pl.fromPx({ x: (ev.clientX - rect.left) * dpr, y: (ev.clientY - rect.top) * dpr });
+    }
+
+    els.lens.addEventListener("pointerdown", ev => {
+      els.lens.setPointerCapture(ev.pointerId);
+      state.dragging = true;
+      els.lens.classList.add("dragging");
+      state.y = pointerWorld(ev);
+      render();
+    });
+
+    els.lens.addEventListener("pointermove", ev => {
+      if (!state.dragging) return;
+      state.y = pointerWorld(ev);
+      render();
+    });
+
+    els.lens.addEventListener("pointerup", ev => {
+      state.dragging = false;
+      els.lens.classList.remove("dragging");
+      els.lens.releasePointerCapture(ev.pointerId);
+    });
+
+    for (const input of [els.s, els.qLog, els.rhoLog, els.zoom]) {
+      input.addEventListener("input", () => {
+        if (input === els.s || input === els.qLog) state.cache = null;
+        render();
+      });
+    }
+
+    els.resetBtn.addEventListener("click", () => {
+      state.y = { x: 0.1, y: 0.1 };
+      render();
+    });
+
+    els.sampleBtn.addEventListener("click", () => {
+      state.lineMode = !state.lineMode;
+      els.sampleBtn.textContent = state.lineMode ? "Hide Line" : "Trace Line";
+      render();
+    });
+
+    window.addEventListener("resize", render);
+    function applyQueryParams() {
+      const query = new URLSearchParams(window.location.search);
+      for (const [key, el] of [["s", els.s], ["qLog", els.qLog], ["rhoLog", els.rhoLog], ["zoom", els.zoom]]) {
+        if (!query.has(key)) continue;
+        const value = Number(query.get(key));
+        const min = Number(el.min);
+        const max = Number(el.max);
+        if (Number.isFinite(value)) el.value = Math.max(min, Math.min(max, value));
+      }
+      if (query.has("y1") && query.has("y2")) {
+        const y1 = Number(query.get("y1"));
+        const y2 = Number(query.get("y2"));
+        if (Number.isFinite(y1) && Number.isFinite(y2)) state.y = { x: y1, y: y2 };
+      }
+    }
+    applyQueryParams();
+    els.sampleBtn.textContent = "Hide Line";
+    render();
+  </script>
+</body>
+</html>
